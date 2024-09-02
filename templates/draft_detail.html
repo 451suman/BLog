@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="row">
+    <div class="col">
+        <div class="post">
+            {% if request.user.is_authenticated %}
+            <div class="mt-2">
+                <a href="{% url 'draft-publish' post.id %}" class="btn btn-success">Published </a>
+            </div>
+            {% endif %}
+            <h1>
+                <a href="#">{{post.title}}</a>
+            </h1>
+            {% if user.is_authenticated %}
+            <div class="mt-2 my2">
+                <a href="#" class="btn btn-primary">EDIT</a>
+                <a href="{% url 'post-delete' post.id %}" class="btn btn-danger">DELETE</a>
+            </div>
+            {% endif %}
+            <div class="date author">@{{ post.author.username }}</div>
+            <p>{{post.content|linebreaksbr }}</p>
+        </div>
+    </div>
+</div>
+{% endblock content %}
