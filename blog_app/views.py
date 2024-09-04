@@ -1,66 +1,115 @@
 from django.shortcuts import redirect, render
+from django.urls import reverse_lazy
 from blog_app.forms import PostForm
 from blog_app.models import Post
-from django.contrib.auth.decorators import login_required
+from django.contrib.auth.decorators import login_required  #: This mixin ensures that the user must be logged in to access the view. If a user who
+
+# is not authenticated tries to access this view, they will be redirected to the login page.
 from django.utils import timezone
 
+from django.views.generic import ListView, DetailView, CreateView, UpdateView, View, DeleteView
+
+from django.contrib.auth.mixins import LoginRequiredMixin
+from django.contrib import messages
+
+
 # Create your views here.
-def post_list(request):
-    # posts = Post.objects.all()
-    posts = Post.objects.filter(published_at__isnull=False)
-    return render(request, 'post_list.html', {"posts": posts},)
+class PostListView(ListView):
+    model = Post
+    template_name = "post_list.html"
+    context_object_name = "posts"
 
-def post_detail(request, pk):
-    post = Post.objects.get(pk=pk, published_at__isnull=False)  
-    return render(request, 'post_detail.html', {"post": post},)
+    def get_queryset(self):
+        posts = Post.objects.filter(published_at__isnull=False).order_by(
+            "-published_at"
+        )  # - published_at is used for desending order
+        return posts
 
-@login_required
-def draft_list(request):
-    posts = Post.objects.filter(published_at__isnull=True)
-    return render(request, 'draft_list.html', {"posts": posts},)
 
-@login_required
-def draft_detail(request,pk):
-    post = Post.objects.get(pk=pk, published_at__isnull=True)
-    return render(request, 'draft_detail.html', {"post": post},)
+class PostDetailView(DetailView):
+    model = Post
+    template_name = "post_detail.html"
+    context_object_name = "post"
 
-@login_required
-def post_delete(request, pk):
-    post = Post.objects.get(pk=pk)
-    post.delete()
-    return redirect('post-list')
+    def get_queryset(self):
+        queryset = Post.objects.filter(pk=self.kwargs["pk"], published_at__isnull=False)
+        return queryset
 
-@login_required
-def draft_publish(request, pk):
-    post = Post.objects.get(pk=pk, published_at__isnull=True)
-    post.published_at = timezone.now()
-    post.save()
-    return redirect('post-detail', pk)
 
-@login_required
-def post_create(request):
-    form = PostForm()
-    if request.method == 'POST':
-        form = PostForm(request.POST)
-        if form.is_valid():
-            post = form.save(commit=False)
-            post.author = request.user  #logged in user will be author
-            post.save()
-            return redirect("draft-detail",pk=post.pk)
+class DraftListView(LoginRequiredMixin, ListView):
+    model = Post
+    template_name = "draft_list.html"
+    context_object_name = "posts"
 
-    return render(request, "post_create.html", {"form":form},)    
+    def get_queryset(self):
+        queryset = Post.objects.filter(published_at__isnull=True).order_by(
+            "-published_at"
+        )
+        return queryset
 
-@login_required
-def post_update(request, pk):
-    post = Post.objects.get(pk=pk)
-    form = PostForm(instance = post)
-    if request.method == 'POST':
-        form = PostForm(request.POST,instance = post)
-        if form.is_valid():
-            post = form.save()
-            if post.published_at:
-                return redirect("post-detail",pk=post.pk)
-            else:
-                return redirect("draft-detail", post.pk)
+
+class DraftDetailView(LoginRequiredMixin, DetailView):
+    model = Post
+    template_name = "draft_detail.html"
+    context_object_name = "post"
+
+    def get_queryset(self):
+        queryset = Post.objects.filter(pk=self.kwargs["pk"], published_at__isnull=True)
+        return queryset
+
+
+class PostDeleteView(DeleteView):
+    model = Post
+    success_url = reverse_lazy("post-list")
+    # success_url: This attribute defines the URL to redirect to after the Post has been successfully deleted.
+
+    def form_valid(self, form):
+        messages.success(self.request, "Post was Deleted Successfully")
+        return super().form_valid(form)
+
+# if you wuse Delete view then u have to make form to delete data
+
+# class PostDeleteView(LoginRequiredMixin, View):
+#     def get(self, request, pk):
+#         post = Post.objects.get(pk=pk)
+#         post.delete()
+#         return redirect("post-list")
+
+
+class DraftPublishView(LoginRequiredMixin, View):
+    def get(self, request, pk):
+        post = Post.objects.get(pk=pk, published_at__isnull=True)
+        post.published_at = timezone.now()
+        post.save()
+        messages.success(request, "Post was published successfully!")
+        return redirect("post-detail", pk)
     
-    return render(request, "post_create.html",{"form":form})
+
+
+class PostCreateView(LoginRequiredMixin, CreateView):
+    model = Post
+    template_name = "post_create.html"
+    form_class = PostForm
+    # success_url = reverse_lazy("post-list")
+
+    def get_success_url(self) -> str:
+        return reverse_lazy("draft-detail", kwargs={"pk": self.object.pk})
+
+    # get_success_url: This method is overridden to define the URL to which the user should be redirected after successfully creating a Post.
+
+    def form_valid(self, form):
+        form.instance.author = self.request.user
+        return super().form_valid(form)
+
+
+class PostUpdateView(LoginRequiredMixin, UpdateView):
+    model = Post
+    template_name = "post_create.html"
+    form_class = PostForm
+
+    def get_success_url(self):
+        post = self.get_object()
+        if post.published_at:
+            return reverse_lazy("post-detail", kwargs={"pk": post.pk})
+        else:
+            return reverse_lazy("draft-detail", kwargs={"pk": post.pk})
